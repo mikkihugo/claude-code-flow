@@ -1,0 +1,60 @@
+{
+  "compilerOptions": {
+    "lib": ["deno.ns", "es2022"],
+    "strict": true,
+    "allowJs": true,
+    "checkJs": false
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 80,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": true,
+    "proseWrap": "preserve"
+  },
+  "tasks": {
+    "dev": "deno run --allow-all src/cli/main.ts",
+    "build": "deno compile --allow-all --output bin/claude-flow-deno src/cli/main.ts",
+    "test": "deno test --allow-all",
+    "typecheck": "deno check src/**/*.ts",
+    "start": "deno run --allow-all src/cli/main.ts"
+  },
+  "imports": {
+    "@std/": "https://deno.land/std@0.208.0/",
+    "@cliffy/": "https://deno.land/x/cliffy@v1.0.0-rc.3/",
+    "chalk": "npm:chalk@^4.1.2",
+    "commander": "npm:commander@^11.1.0",
+    "inquirer": "npm:inquirer@^9.2.12",
+    "ora": "npm:ora@^7.0.1",
+    "figlet": "npm:figlet@^1.8.1",
+    "gradient-string": "npm:gradient-string@^3.0.0",
+    "cli-table3": "npm:cli-table3@^0.6.3",
+    "nanoid": "npm:nanoid@^5.0.4",
+    "p-queue": "npm:p-queue@^8.1.0",
+    "better-sqlite3": "npm:better-sqlite3@^12.2.0",
+    "express": "npm:express@^4.18.2",
+    "cors": "npm:cors@^2.8.5",
+    "helmet": "npm:helmet@^7.1.0",
+    "ws": "npm:ws@^8.18.3",
+    "fs-extra": "npm:fs-extra@^11.2.0",
+    "glob": "npm:glob@^11.0.3",
+    "diskusage": "npm:diskusage@^1.1.3",
+    "blessed": "npm:blessed@^0.1.81",
+    "node-pty": "npm:node-pty@^1.0.0",
+    "ruv-swarm": "npm:ruv-swarm@^1.0.14",
+    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.0.4"
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "bin",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
