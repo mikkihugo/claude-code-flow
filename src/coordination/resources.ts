@@ -320,4 +320,78 @@ export class ResourceManager {
       }
     }
   }
+
+  /**
+   * Get resource metrics
+   */
+  async getMetrics(): Promise<Record<string, unknown>> {
+    const totalResources = this.resources.size;
+    const lockedResources = this.locks.size;
+    const freeResources = totalResources - lockedResources;
+    
+    // Calculate average lock duration
+    let totalLockDuration = 0;
+    let lockCount = 0;
+    const now = Date.now();
+    
+    for (const [resourceId] of this.locks) {
+      const resource = this.resources.get(resourceId);
+      if (resource?.lockedAt) {
+        totalLockDuration += now - resource.lockedAt.getTime();
+        lockCount++;
+      }
+    }
+    
+    const averageLockDuration = lockCount > 0 ? totalLockDuration / lockCount : 0;
+    
+    // Calculate lock contention (total waiting requests)
+    const lockContention = Array.from(this.waitQueue.values())
+      .reduce((total, queue) => total + queue.length, 0);
+    
+    return {
+      totalResources,
+      lockedResources,
+      freeResources,
+      resourceUtilization: {
+        percentage: totalResources > 0 ? (lockedResources / totalResources) * 100 : 0,
+        lockedResources,
+        totalResources
+      },
+      averageLockDuration,
+      lockContention,
+      peakMemoryUsage: process.memoryUsage().heapUsed / 1024 / 1024, // MB
+      averageMemoryUsage: process.memoryUsage().rss / 1024 / 1024, // MB
+    };
+  }
+
+  /**
+   * Get health status
+   */
+  async getHealthStatus(): Promise<{ healthy: boolean; error?: string }> {
+    try {
+      const metrics = await this.getMetrics();
+      const utilization = metrics.resourceUtilization as number;
+      
+      // Consider unhealthy if too many resources are locked for too long
+      const healthy = utilization < 0.9; // Less than 90% utilization
+      
+      return {
+        healthy,
+        error: healthy ? undefined : 'High resource utilization detected'
+      };
+    } catch (error) {
+      return {
+        healthy: false,
+        error: getErrorMessage(error)
+      };
+    }
+  }
+
+  /**
+   * Perform maintenance
+   */
+  async performMaintenance(): Promise<void> {
+    this.logger.debug('Performing resource manager maintenance');
+    this.cleanup();
+  }
 }

@@ -24,8 +24,11 @@ export default {
         target: 'es2022'
       }
     }],
-    '^.+\\.js$': ['babel-jest', {
-      presets: [['@babel/preset-env', { modules: false }]]
+    '^.+\\.m?js$': ['babel-jest', {
+      presets: [['@babel/preset-env', { 
+        modules: 'auto',
+        targets: { node: 'current' }
+      }]]
     }]
   },
   moduleNameMapper: {
@@ -60,7 +63,7 @@ export default {
   // Enhanced error handling
   errorOnDeprecated: false,
   // Better module resolution
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node', 'mjs'],
   // Clear mocks between tests
   clearMocks: true,
   restoreMocks: true,
@@ -69,5 +72,12 @@ export default {
     'ts-jest': {
       useESM: true
     }
-  }
+  },
+  // Better handling of ES modules and environment teardown
+  detectOpenHandles: true,
+  forceExit: true,
+  // Improved import handling
+  injectGlobals: true,
+  // Handle async teardown issues
+  maxWorkers: 1
 };

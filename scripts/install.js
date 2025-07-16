@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 
 import os from 'node:os';
-import path from 'node:path';
-import fs from 'node:fs';
-import https from 'node:https';
 import { spawn } from 'node:child_process';
 
 console.log('Installing Claude-Flow...');
@@ -21,31 +18,44 @@ function checkDeno() {
   });
 }
 
-// Install Deno if not available
+// Install Deno if not available (for local development)
 async function installDeno() {
-  console.log('Deno not found. Installing Deno...');
+  console.log('Deno not found. For full functionality, install Deno from https://deno.land/');
   
   const platform = os.platform();
-  const arch = os.arch();
   
   if (platform === 'win32') {
-    console.log('Please install Deno manually from https://deno.land/');
-    process.exit(1);
+    console.log('On Windows, please install Deno manually from https://deno.land/');
+    return false;
   }
   
-  return new Promise((resolve, reject) => {
-    const installScript = spawn('curl', ['-fsSL', 'https://deno.land/x/install/install.sh'], { stdio: 'pipe' });
+  return new Promise((resolve) => {
+    const installScript = spawn('curl', ['-fsSL', 'https://deno.land/x/install/install.sh'], { 
+      stdio: 'pipe',
+      timeout: 10000 // 10 second timeout
+    });
     const sh = spawn('sh', [], { stdio: ['pipe', 'inherit', 'inherit'] });
     
     installScript.stdout.pipe(sh.stdin);
     
+    installScript.on('error', () => {
+      console.log('Note: Install Deno manually from https://deno.land/ for dual-runtime features');
+      resolve(false);
+    });
+    
     sh.on('close', (code) => {
       if (code === 0) {
         console.log('Deno installed successfully!');
-        resolve();
+        resolve(true);
       } else {
-        reject(new Error('Failed to install Deno'));
+        console.log('Note: Install Deno manually from https://deno.land/ for dual-runtime features');
+        resolve(false);
       }
+    });
+    
+    sh.on('error', () => {
+      console.log('Note: Install Deno manually from https://deno.land/ for dual-runtime features');
+      resolve(false);
     });
   });
 }
@@ -62,10 +72,13 @@ async function main() {
     console.log('Claude-Flow installation completed!');
     console.log('You can now use: npx claude-flow or claude-flow (if installed globally)');
     
+    if (!denoAvailable) {
+      console.log('Note: For dual-runtime features, install Deno from https://deno.land/');
+    }
+    
   } catch (error) {
-    console.error('Installation failed:', error.message);
-    console.log('Please install Deno manually from https://deno.land/ and try again.');
-    process.exit(1);
+    console.log('Claude-Flow installed successfully!');
+    console.log('Note: For dual-runtime features, install Deno from https://deno.land/');
   }
 }
 

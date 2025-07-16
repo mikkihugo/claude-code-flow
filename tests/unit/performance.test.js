@@ -3,11 +3,10 @@
  */
 
 import { jest } from '@jest/globals';
-import { perfHelpers } from '../utils/test-helpers.js';
 import fs from 'fs-extra';
-import { parseFlags } from '../../cli/utils.js';
-import { deepMerge } from '../../utils/helpers.js';
-import { agentCommand } from '../../cli/simple-commands/agent.js';
+import { parseFlags } from '../../src/cli/utils.js';
+import { deepMerge } from '../../src/utils/helpers.js';
+import { agentCommand } from '../../src/cli/simple-commands/agent.js';
 import { memoryCommand } from '../../cli/simple-commands/memory.js';
 
 describe('Performance Tests', () => {

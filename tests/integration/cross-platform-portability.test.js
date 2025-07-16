@@ -202,14 +202,14 @@ describe('Cross-Platform Portability Tests', () => {
     });
 
     test('should use platform-appropriate command checking', async () => {
-      const { execSync } = await import('child_process');
-      const execSyncSpy = jest.spyOn(execSync, 'default');
+      const childProcess = await import('child_process');
+      const execSyncSpy = jest.spyOn(childProcess, 'execSync');
 
       // Test on current platform
       if (platform() === 'win32') {
         // On Windows, should use 'where'
         try {
-          execSync('where node', { stdio: 'ignore' });
+          childProcess.execSync('where node', { stdio: 'ignore' });
         } catch (e) {
           // Command might not exist, that's ok for the test
         }
@@ -220,7 +220,7 @@ describe('Cross-Platform Portability Tests', () => {
       } else {
         // On Unix-like systems, should use 'command -v'
         try {
-          execSync('command -v node', { stdio: 'ignore', shell: true });
+          childProcess.execSync('command -v node', { stdio: 'ignore', shell: true });
         } catch (e) {
           // Command might not exist, that's ok for the test
         }

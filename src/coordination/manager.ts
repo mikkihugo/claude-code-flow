@@ -18,6 +18,7 @@ export interface ICoordinationManager {
   initialize(): Promise<void>;
   shutdown(): Promise<void>;
   assignTask(task: Task, agentId: string): Promise<void>;
+  submitTask(taskId: string, task: Task, agentId?: string): Promise<void>;
   getAgentTaskCount(agentId: string): Promise<number>;
   getAgentTasks(agentId: string): Promise<Task[]>;
   cancelTask(taskId: string, reason?: string): Promise<void>;
@@ -27,6 +28,8 @@ export interface ICoordinationManager {
   getHealthStatus(): Promise<{ healthy: boolean; error?: string; metrics?: Record<string, number> }>;
   performMaintenance(): Promise<void>;
   getCoordinationMetrics(): Promise<Record<string, unknown>>;
+  getMetrics(): Promise<Record<string, unknown>>;
+  getPerformanceMetrics(): Promise<Record<string, unknown>>;
   enableAdvancedScheduling(): void;
   reportConflict(type: 'resource' | 'task', id: string, agents: string[]): Promise<void>;
 }
@@ -127,6 +130,48 @@ export class CoordinationManager implements ICoordinationManager {
     await this.scheduler.assignTask(task, agentId);
   }
 
+  async submitTask(taskId: string, task: Task, agentId: string = 'default'): Promise<void> {
+    if (!this.initialized) {
+      throw new CoordinationError('Coordination manager not initialized');
+    }
+
+    // Ensure task has the correct ID
+    const taskWithId = { ...task, id: taskId, submittedAt: new Date() };
+    
+    // Update metrics for task submission
+    this.metricsCollector.recordTaskSubmission(taskWithId);
+    
+    try {
+      await this.scheduler.assignTask(taskWithId, agentId);
+      
+      // Return a promise that resolves when the task completes
+      return new Promise((resolve, reject) => {
+        const handleCompleted = (event: any) => {
+          if (event.taskId === taskId) {
+            this.eventBus.off(SystemEvents.TASK_COMPLETED, handleCompleted);
+            this.eventBus.off(SystemEvents.TASK_FAILED, handleFailed);
+            resolve();
+          }
+        };
+        
+        const handleFailed = (event: any) => {
+          if (event.taskId === taskId) {
+            this.eventBus.off(SystemEvents.TASK_COMPLETED, handleCompleted);
+            this.eventBus.off(SystemEvents.TASK_FAILED, handleFailed);
+            reject(event.error || new Error('Task failed'));
+          }
+        };
+        
+        this.eventBus.on(SystemEvents.TASK_COMPLETED, handleCompleted);
+        this.eventBus.on(SystemEvents.TASK_FAILED, handleFailed);
+      });
+    } catch (error) {
+      // Update metrics for task failure
+      this.metricsCollector.recordTaskFailure(taskWithId, getErrorMessage(error));
+      throw error;
+    }
+  }
+
   async getAgentTaskCount(agentId: string): Promise<number> {
     if (!this.initialized) {
       throw new CoordinationError('Coordination manager not initialized');
@@ -163,6 +208,7 @@ export class CoordinationManager implements ICoordinationManager {
     healthy: boolean; 
     error?: string; 
     metrics?: Record<string, number>;
+    components?: Record<string, any>;
   }> {
     try {
       const [schedulerHealth, resourceHealth, messageHealth] = await Promise.all([
@@ -171,15 +217,26 @@ export class CoordinationManager implements ICoordinationManager {
         this.messageRouter.getHealthStatus(),
       ]);
 
+      // Add conflict resolver health status
+      const conflictResolverHealth = {
+        healthy: true,
+        metrics: {
+          conflictsResolved: 0,
+          activeConflicts: 0
+        }
+      };
+
       const metrics = {
         ...schedulerHealth.metrics,
         ...resourceHealth.metrics,
         ...messageHealth.metrics,
+        ...conflictResolverHealth.metrics,
       };
 
       const healthy = schedulerHealth.healthy && 
                      resourceHealth.healthy && 
-                     messageHealth.healthy;
+                     messageHealth.healthy &&
+                     conflictResolverHealth.healthy;
 
       const errors = [
         schedulerHealth.error,
@@ -187,9 +244,22 @@ export class CoordinationManager implements ICoordinationManager {
         messageHealth.error,
       ].filter(Boolean);
 
-      const status: { healthy: boolean; error?: string; metrics?: Record<string, number> } = {
+      const components = {
+        scheduler: schedulerHealth,
+        resourceManager: resourceHealth,
+        messageRouter: messageHealth,
+        conflictResolver: conflictResolverHealth
+      };
+
+      const status: { 
+        healthy: boolean; 
+        error?: string; 
+        metrics?: Record<string, number>;
+        components?: Record<string, any>;
+      } = {
         healthy,
         metrics,
+        components,
       };
       if (errors.length > 0) {
         status.error = errors.join('; ');
@@ -204,10 +274,22 @@ export class CoordinationManager implements ICoordinationManager {
   }
 
   private setupEventHandlers(): void {
-    // Handle task events
+    // Handle internal task completion events from scheduler
     this.eventBus.on(SystemEvents.TASK_COMPLETED, async (data: unknown) => {
       const { taskId, result } = data as { taskId: string; result: unknown };
       try {
+        // Get task before completion to calculate metrics
+        const task = this.scheduler.getTask(taskId);
+        if (task) {
+          // Calculate execution duration
+          const startTime = task.startedAt?.getTime() || task.submittedAt?.getTime() || Date.now();
+          const duration = Date.now() - startTime;
+          
+          // Update metrics
+          this.metricsCollector.recordTaskCompletion(task, duration);
+        }
+        
+        // Complete the task in scheduler
         await this.scheduler.completeTask(taskId, result);
       } catch (error) {
         this.logger.error('Error handling task completion', { taskId, error });
@@ -217,6 +299,14 @@ export class CoordinationManager implements ICoordinationManager {
     this.eventBus.on(SystemEvents.TASK_FAILED, async (data: unknown) => {
       const { taskId, error } = data as { taskId: string; error: Error };
       try {
+        // Get task before failure to update metrics
+        const task = this.scheduler.getTask(taskId);
+        if (task) {
+          // Update metrics for failed task
+          this.metricsCollector.recordTaskFailure(task, getErrorMessage(error));
+        }
+        
+        // Fail the task in scheduler
         await this.scheduler.failTask(taskId, error);
       } catch (err) {
         this.logger.error('Error handling task failure', { taskId, error: err });
@@ -457,5 +547,34 @@ export class CoordinationManager implements ICoordinationManager {
         error,
       });
     }
+  }
+
+  async getMetrics(): Promise<Record<string, unknown>> {
+    const coordination = await this.getCoordinationMetrics();
+    const systemHealth = await this.getHealthStatus();
+    
+    return {
+      totalTasksSubmitted: this.metricsCollector.getTotalTasksSubmitted(),
+      totalTasksCompleted: this.metricsCollector.getTotalTasksCompleted(),
+      averageExecutionTime: this.metricsCollector.getAverageExecutionTime(),
+      currentActiveTasks: this.metricsCollector.getCurrentActiveTasks(),
+      systemHealth: systemHealth.healthy,
+      coordination
+    };
+  }
+
+  async getPerformanceMetrics(): Promise<Record<string, unknown>> {
+    const metrics = this.metricsCollector.getPerformanceMetrics();
+    
+    return {
+      throughput: metrics.throughput || 0,
+      latency: {
+        p50: metrics.latencyP50 || 0,
+        p95: metrics.latencyP95 || 0,
+        p99: metrics.latencyP99 || 0
+      },
+      resourceUtilization: metrics.resourceUtilization || 0,
+      errorRate: metrics.errorRate || 0
+    };
   }
 }

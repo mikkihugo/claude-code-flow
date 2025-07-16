@@ -3,10 +3,7 @@
  * Tests stdio and HTTP transports, protocol compliance, and error handling
  */
 
-import { describe, it, beforeEach, afterEach  } from "../test.utils.ts";
-import { expect } from "@jest/globals";
-// FakeTime equivalent available in test.utils.ts
-import { spy, stub  } from "../test.utils.ts";
+import { describe, it, beforeEach, afterEach, expect, spy, stub  } from "../../test.utils.ts";
 
 import { MCPServer } from '../../../src/mcp/server.ts';
 import { MCPClient } from '../../../src/mcp/client.ts';

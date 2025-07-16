@@ -25,6 +25,7 @@ export class TaskScheduler {
   protected agentTasks = new Map<string, Set<string>>(); // agentId -> taskIds
   protected taskDependencies = new Map<string, Set<string>>(); // taskId -> dependent taskIds
   protected completedTasks = new Set<string>();
+  private cleanupInterval?: NodeJS.Timeout;
 
   constructor(
     protected config: CoordinationConfig,
@@ -36,11 +37,17 @@ export class TaskScheduler {
     this.logger.info('Initializing task scheduler');
     
     // Set up periodic cleanup
-    setInterval(() => this.cleanup(), 60000); // Every minute
+    this.cleanupInterval = setInterval(() => this.cleanup(), 60000); // Every minute
   }
 
   async shutdown(): Promise<void> {
     this.logger.info('Shutting down task scheduler');
+    
+    // Clear cleanup interval
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
     
     // Cancel all active tasks
     const taskIds = Array.from(this.tasks.keys());
@@ -55,26 +62,50 @@ export class TaskScheduler {
   async assignTask(task: Task, agentId: string): Promise<void> {
     this.logger.info('Assigning task', { taskId: task.id, agentId });
 
-    // Check dependencies
-    if (task.dependencies.length > 0) {
+    // Create scheduled task
+    const scheduledTask: ScheduledTask = {
+      task: { ...task, assignedAgent: agentId },
+      agentId,
+      attempts: 0,
+    };
+
+    // Store task first so it's available for circular dependency detection
+    this.tasks.set(task.id, scheduledTask);
+
+    // Check for circular dependencies after adding the task
+    if (task.dependencies && task.dependencies.length > 0) {
+      const circular = this.detectCircularDependencies(task.id, task.dependencies);
+      if (circular.length > 0) {
+        // Remove the task we just added since it creates a cycle
+        this.tasks.delete(task.id);
+        throw new TaskDependencyError(
+          `Circular dependency detected: ${circular.join(' -> ')}`
+        );
+      }
+    }
+
+    // Check dependencies - handle undefined dependencies gracefully
+    if (task.dependencies && task.dependencies.length > 0) {
       const unmetDependencies = task.dependencies.filter(
         depId => !this.completedTasks.has(depId),
       );
       
       if (unmetDependencies.length > 0) {
-        throw new TaskDependencyError(task.id, unmetDependencies);
+        // Queue the task for later execution when dependencies are met
+        scheduledTask.task.status = 'pending';
+        this.logger.info('Task queued pending dependencies', { 
+          taskId: task.id, 
+          agentId, 
+          unmetDependencies 
+        });
+      } else {
+        // Dependencies are met, can start immediately
+        scheduledTask.task.status = 'queued';
       }
+    } else {
+      // No dependencies, can start immediately
+      scheduledTask.task.status = 'queued';
     }
-
-    // Create scheduled task
-    const scheduledTask: ScheduledTask = {
-      task: { ...task, status: 'assigned', assignedAgent: agentId },
-      agentId,
-      attempts: 0,
-    };
-
-    // Store task
-    this.tasks.set(task.id, scheduledTask);
 
     // Update agent tasks
     if (!this.agentTasks.has(agentId)) {
@@ -82,16 +113,26 @@ export class TaskScheduler {
     }
     this.agentTasks.get(agentId)!.add(task.id);
 
-    // Update dependencies
-    for (const depId of task.dependencies) {
-      if (!this.taskDependencies.has(depId)) {
-        this.taskDependencies.set(depId, new Set());
+    // Update dependencies - handle undefined dependencies gracefully
+    if (task.dependencies && task.dependencies.length > 0) {
+      for (const depId of task.dependencies) {
+        if (!this.taskDependencies.has(depId)) {
+          this.taskDependencies.set(depId, new Set());
+        }
+        this.taskDependencies.get(depId)!.add(task.id);
       }
-      this.taskDependencies.get(depId)!.add(task.id);
     }
 
-    // Start task execution
-    this.startTask(task.id);
+    // Start task if ready
+    if (scheduledTask.task.status === 'queued') {
+      this.startTask(task.id);
+    }
+
+    this.logger.info('Task assigned', { 
+      taskId: task.id, 
+      agentId, 
+      status: scheduledTask.task.status 
+    });
   }
 
   async completeTask(taskId: string, result: unknown): Promise<void> {
@@ -355,11 +396,60 @@ export class TaskScheduler {
     scheduled.timeout = setTimeout(() => {
       this.failTask(taskId, new TaskTimeoutError(taskId, timeoutMs));
     }, timeoutMs);
+
+    // Execute the task if it has an execute method
+    if (scheduled.task.execute && typeof scheduled.task.execute === 'function') {
+      Promise.resolve(scheduled.task.execute())
+        .then((result) => {
+          // Emit completion event instead of calling completeTask directly
+          this.eventBus.emit(SystemEvents.TASK_COMPLETED, { taskId, result });
+        })
+        .catch((error) => {
+          // Emit failure event instead of calling failTask directly
+          this.eventBus.emit(SystemEvents.TASK_FAILED, { taskId, error });
+        });
+    } else {
+      // If no execute method, mark as completed immediately
+      this.eventBus.emit(SystemEvents.TASK_COMPLETED, { taskId, result: {} });
+    }
   }
 
   private canStartTask(task: Task): boolean {
     // Check if all dependencies are completed
+    if (!task.dependencies || task.dependencies.length === 0) {
+      return true;
+    }
     return task.dependencies.every(depId => this.completedTasks.has(depId));
+  }
+
+  private async checkAndStartDependentTasks(completedTaskId: string): Promise<void> {
+    const dependentTaskIds = this.taskDependencies.get(completedTaskId);
+    if (!dependentTaskIds) {
+      return;
+    }
+
+    for (const dependentId of dependentTaskIds) {
+      const dependent = this.tasks.get(dependentId);
+      if (!dependent || dependent.task.status !== 'pending') {
+        continue;
+      }
+
+      // Check if all dependencies are now met
+      const allDependenciesMet = (dependent.task.dependencies || []).every(
+        depId => this.completedTasks.has(depId)
+      );
+
+      if (allDependenciesMet) {
+        this.logger.info('Starting dependent task', { 
+          taskId: dependentId, 
+          dependencies: dependent.task.dependencies 
+        });
+        
+        // Update status and start the task
+        dependent.task.status = 'queued';
+        this.startTask(dependentId);
+      }
+    }
   }
 
   private async cancelDependentTasks(taskId: string, reason: string): Promise<void> {
@@ -387,5 +477,141 @@ export class TaskScheduler {
         }
       }
     }
+  }
+
+  /**
+   * Get task by ID
+   */
+  getTask(taskId: string): Task | undefined {
+    const scheduled = this.tasks.get(taskId);
+    return scheduled?.task;
+  }
+
+  /**
+   * Detect circular dependencies in task graph
+   */
+  private detectCircularDependencies(taskId: string, dependencies: string[]): string[] {
+    // Create temporary graph including the new task
+    const tempTaskDependencies = new Map(this.taskDependencies);
+    
+    // Add new task dependencies to temporary graph
+    for (const dep of dependencies) {
+      if (!tempTaskDependencies.has(dep)) {
+        tempTaskDependencies.set(dep, new Set());
+      }
+      tempTaskDependencies.get(dep)!.add(taskId);
+    }
+    
+    const visited = new Set<string>();
+    const recursionStack = new Set<string>();
+    
+    const dfs = (currentTask: string): string[] => {
+      if (recursionStack.has(currentTask)) {
+        // Found a cycle - return path to current task
+        return [currentTask];
+      }
+      
+      if (visited.has(currentTask)) {
+        return [];
+      }
+      
+      visited.add(currentTask);
+      recursionStack.add(currentTask);
+      
+      // Get dependencies for current task
+      const taskDeps = this.getTaskDependencies(currentTask);
+      
+      for (const dep of taskDeps) {
+        const cycle = dfs(dep);
+        if (cycle.length > 0) {
+          // Add current task to the cycle path
+          return [currentTask, ...cycle];
+        }
+      }
+      
+      recursionStack.delete(currentTask);
+      return [];
+    };
+    
+    // Check for cycles starting from the new task
+    const cycle = dfs(taskId);
+    return cycle;
+  }
+
+  /**
+   * Get dependencies for a task (either from stored tasks or from the new task being added)
+   */
+  private getTaskDependencies(taskId: string): string[] {
+    const scheduled = this.tasks.get(taskId);
+    return scheduled?.task.dependencies || [];
+  }
+
+  /**
+   * Complete a task
+   */
+  async completeTask(taskId: string, result?: unknown): Promise<void> {
+    const scheduled = this.tasks.get(taskId);
+    if (!scheduled) {
+      this.logger.warn('Attempted to complete non-existent task', { taskId });
+      return;
+    }
+
+    this.logger.info('Task completed', { taskId, agentId: scheduled.agentId });
+
+    // Clear timeout
+    if (scheduled.timeout) {
+      clearTimeout(scheduled.timeout);
+    }
+
+    // Update task status
+    scheduled.task.status = 'completed';
+    scheduled.task.completedAt = new Date();
+    scheduled.task.result = result;
+
+    // Move to completed set
+    this.completedTasks.add(taskId);
+
+    // Remove from active tasks
+    this.tasks.delete(taskId);
+    this.agentTasks.get(scheduled.agentId)?.delete(taskId);
+
+    // Check dependent tasks and start them if their dependencies are now met
+    await this.checkAndStartDependentTasks(taskId);
+
+    // Emit completion event
+    this.eventBus.emit(SystemEvents.TASK_COMPLETED, { taskId, result });
+  }
+
+  /**
+   * Fail a task
+   */
+  async failTask(taskId: string, error: Error): Promise<void> {
+    const scheduled = this.tasks.get(taskId);
+    if (!scheduled) {
+      this.logger.warn('Attempted to fail non-existent task', { taskId });
+      return;
+    }
+
+    this.logger.error('Task failed', { taskId, agentId: scheduled.agentId, error });
+
+    // Clear timeout
+    if (scheduled.timeout) {
+      clearTimeout(scheduled.timeout);
+    }
+
+    // Update task status
+    scheduled.task.status = 'failed';
+    scheduled.task.completedAt = new Date();
+    scheduled.task.error = error.message;
+
+    // Remove from active tasks
+    this.tasks.delete(taskId);
+    this.agentTasks.get(scheduled.agentId)?.delete(taskId);
+
+    // Cancel dependent tasks
+    await this.cancelDependentTasks(taskId, 'Parent task failed');
+
+    // Emit failure event
+    this.eventBus.emit(SystemEvents.TASK_FAILED, { taskId, error });
   }
 }

@@ -14,13 +14,26 @@ import {
   spy,
   assertSpyCalls,
   FakeTime,
+  createDeferred,
+  waitFor,
+  captureConsole,
+  TestDataBuilder
 } from '../../test.utils.ts';
 import { Orchestrator } from '../../../src/core/orchestrator.ts';
 import { SystemEvents } from '../../../src/utils/types.ts';
 import { InitializationError, SystemError, ShutdownError } from '../../../src/utils/errors.ts';
-import { createMocks, MockEventBus } from '../../mocks/index.ts';
-import { TestDataBuilder } from '../../test.utils.ts';
-import { cleanupTestEnv, setupTestEnv } from '../../test.config.ts';
+import { mockAgent, mockConfig, mockEventBus, mockMemoryStore, mockTerminalManager, mockCoordinationSystem } from '../../mocks/index.ts';
+// Test setup functions will be implemented inline
+
+// Create a simple mocks object
+const createMocks = () => ({
+  eventBus: mockEventBus,
+  memoryStore: mockMemoryStore,
+  terminalManager: mockTerminalManager,
+  coordinationSystem: mockCoordinationSystem
+});
+
+const MockEventBus = mockEventBus;
 
 describe('Orchestrator', () => {
   let orchestrator: Orchestrator;

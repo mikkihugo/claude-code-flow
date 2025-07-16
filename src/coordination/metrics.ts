@@ -558,6 +558,37 @@ export class CoordinationMetricsCollector {
   }
 
   /**
+   * Record task submission
+   */
+  recordTaskSubmission(task: any): void {
+    this.counters.totalTasks++;
+    this.gauges.activeTasks++;
+    this.taskStartTimes.set(task.id, new Date());
+    this.recordMetric('task.submitted', 1);
+  }
+
+  /**
+   * Record task completion
+   */
+  recordTaskCompletion(task: any, duration: number): void {
+    this.counters.completedTasks++;
+    this.gauges.activeTasks = Math.max(0, this.gauges.activeTasks - 1);
+    this.histograms.taskDurations.push(duration);
+    this.taskStartTimes.delete(task.id);
+    this.recordMetric('task.completed', 1);
+  }
+
+  /**
+   * Record task failure
+   */
+  recordTaskFailure(task: any, error: string): void {
+    this.counters.failedTasks++;
+    this.gauges.activeTasks = Math.max(0, this.gauges.activeTasks - 1);
+    this.taskStartTimes.delete(task.id);
+    this.recordMetric('task.failed', 1);
+  }
+
+  /**
    * Clear all metrics data
    */
   clearMetrics(): void {
@@ -582,5 +613,72 @@ export class CoordinationMetricsCollector {
     }
     
     this.logger.info('Coordination metrics cleared');
+  }
+
+  /**
+   * Get total tasks submitted
+   */
+  getTotalTasksSubmitted(): number {
+    return this.counters.totalTasks;
+  }
+
+  /**
+   * Get total tasks completed
+   */
+  getTotalTasksCompleted(): number {
+    return this.counters.completedTasks;
+  }
+
+  /**
+   * Get average execution time
+   */
+  getAverageExecutionTime(): number {
+    const durations = this.histograms.taskDurations;
+    if (durations.length === 0) return 0;
+    return durations.reduce((sum, duration) => sum + duration, 0) / durations.length;
+  }
+
+  /**
+   * Get current active tasks
+   */
+  getCurrentActiveTasks(): number {
+    return this.gauges.activeTasks;
+  }
+
+  /**
+   * Get performance metrics
+   */
+  getPerformanceMetrics(): Record<string, number> {
+    const taskDurations = this.histograms.taskDurations;
+    const messageDurations = this.histograms.messageDurations;
+    
+    // Calculate throughput (tasks per millisecond)
+    const completedTasks = this.counters.completedTasks;
+    const timeWindow = this.collectionIntervalMs;
+    const throughput = completedTasks > 0 ? completedTasks / timeWindow : 0;
+    
+    // Calculate latency percentiles
+    const sortedDurations = [...taskDurations].sort((a, b) => a - b);
+    const p50 = this.getPercentile(sortedDurations, 50);
+    const p95 = this.getPercentile(sortedDurations, 95);
+    const p99 = this.getPercentile(sortedDurations, 99);
+    
+    return {
+      throughput,
+      latencyP50: p50,
+      latencyP95: p95,
+      latencyP99: p99,
+      resourceUtilization: this.gauges.lockedResources / (this.gauges.lockedResources + this.gauges.freeResources || 1),
+      errorRate: this.counters.errors / (this.counters.totalTasks || 1)
+    };
+  }
+
+  /**
+   * Calculate percentile value
+   */
+  private getPercentile(sortedArray: number[], percentile: number): number {
+    if (sortedArray.length === 0) return 0;
+    const index = Math.ceil((percentile / 100) * sortedArray.length) - 1;
+    return sortedArray[Math.max(0, index)] || 0;
   }
 }

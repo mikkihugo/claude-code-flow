@@ -2,9 +2,7 @@
  * Comprehensive unit tests for Incremental Updates across the system
  */
 
-import { describe, it, beforeEach, afterEach  } from "../test.utils.ts";
-import { assertEquals, assertExists, assert  } from "../test.utils.ts";
-// FakeTime equivalent available in test.utils.ts
+import { describe, it, beforeEach, afterEach, assertEquals, assertExists, expect  } from "../../test.utils.ts";
 
 import { MemoryManager } from '../../src/memory/manager.ts';
 import { MemoryBackendFactory } from '../../src/memory/backend.ts';
@@ -13,11 +11,7 @@ import { ConfigurationManager } from '../../src/core/config.ts';
 import { deepMerge } from '../../src/utils/helpers.ts';
 import { ResourceManager } from '../../src/resources/resource-manager.ts';
 import { SimpleCache } from '../../src/memory/cache.ts';
-import { 
-  AsyncTestUtils, 
-  FileSystemTestUtils,
-  TestDataGenerator 
-} from '../utils/test-utils.ts';
+// Note: Advanced test utilities not available, using basic test setup
 
 describe('Incremental Updates Test Suite', () => {
   let tempDir: string;

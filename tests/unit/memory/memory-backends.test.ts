@@ -2,22 +2,13 @@
  * Comprehensive unit tests for Memory Backends (SQLite and Markdown)
  */
 
-import { describe, it, beforeEach, afterEach  } from "../test.utils.ts";
-import { expect } from "@jest/globals";
-// FakeTime equivalent available in test.utils.ts
+import { describe, it, beforeEach, afterEach, expect } from "../../test.utils.ts";
 
-import { SQLiteMemoryBackend } from '../../../src/memory/backends/sqlite.ts';
-import { MarkdownMemoryBackend } from '../../../src/memory/backends/markdown.ts';
-import { 
-  AsyncTestUtils, 
-  MemoryTestUtils, 
-  PerformanceTestUtils,
-  TestAssertions,
-  FileSystemTestUtils,
-  TestDataGenerator 
-} from '../../utils/test-utils.ts';
-import { generateMemoryEntries, generateEdgeCaseData } from '../../fixtures/generators.ts';
-import { setupTestEnv, cleanupTestEnv, TEST_CONFIG } from '../../test.config.ts';
+import { SQLiteBackend } from '../../../src/memory/backends/sqlite.ts';
+import { MarkdownBackend } from '../../../src/memory/backends/markdown.ts';
+// Note: Advanced test utilities not available, using basic test setup
+// import { generateMemoryEntries, generateEdgeCaseData } from '../../fixtures/generators.ts';
+// import { setupTestEnv, cleanupTestEnv, TEST_CONFIG } from '../../test.config.ts';
 
 describe('Memory Backends - Comprehensive Tests', () => {
   let tempDir: string;

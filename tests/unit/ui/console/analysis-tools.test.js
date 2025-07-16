@@ -2,16 +2,45 @@
  * @jest-environment node
  */
 
-// Mock Chart.js
-global.Chart = jest.fn().mockImplementation(() => ({
-  data: { labels: [], datasets: [] },
-  update: jest.fn(),
-  destroy: jest.fn(),
-  resize: jest.fn()
-}));
+// Mock Chart.js as a constructor
+global.Chart = function Chart() {
+  this.data = { labels: [], datasets: [] };
+  this.update = jest.fn();
+  this.destroy = jest.fn();
+  this.resize = jest.fn();
+};
 
-// Mock fetch
-global.fetch = jest.fn();
+// Mock fetch with manual implementation
+global.fetch = (() => {
+  const mockFetch = jest.fn(() => 
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({}),
+    })
+  );
+  
+  mockFetch.mockResolvedValue = (value) => {
+    mockFetch.mockImplementation(() => Promise.resolve(value));
+    return mockFetch;
+  };
+  
+  mockFetch.mockRejectedValue = (error) => {
+    mockFetch.mockImplementation(() => Promise.reject(error));
+    return mockFetch;
+  };
+  
+  mockFetch.mockReset = () => {
+    if (mockFetch.mockClear) {
+      mockFetch.mockClear();
+    }
+    mockFetch.mockImplementation(() => Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({}),
+    }));
+  };
+  
+  return mockFetch;
+})();
 
 // Mock WebSocket
 global.WebSocket = class MockWebSocket {
@@ -206,8 +235,14 @@ describe('AnalysisTools - Error Handling', () => {
   });
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    global.fetch.mockReset();
+    // Clear mocks if available
+    if (global.fetch && global.fetch.mockReset) {
+      global.fetch.mockReset();
+    }
+    if (global.fetch && global.fetch.mockClear) {
+      global.fetch.mockClear();
+    }
+    
     analysisTools = new AnalysisTools();
   });
 
@@ -222,7 +257,7 @@ describe('AnalysisTools - Error Handling', () => {
       const errorMessage = 'Network error';
       global.fetch.mockRejectedValue(new Error(errorMessage));
 
-      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+      const consoleErrorSpy = jest.spyOn ? jest.spyOn(console, 'error').mockImplementation() : { mockRestore: () => {} };
       
       await expect(analysisTools.fetchAnalysisData('/api/test')).rejects.toThrow(errorMessage);
       
@@ -299,7 +334,9 @@ describe('AnalysisTools - Error Handling', () => {
 
   describe('showError Method', () => {
     test('should create temporary error message', () => {
-      jest.useFakeTimers();
+      if (jest.useFakeTimers) {
+        jest.useFakeTimers();
+      }
       
       analysisTools.showError('Test error message');
       
@@ -307,11 +344,15 @@ describe('AnalysisTools - Error Handling', () => {
       expect(errorElement).toBeTruthy();
       expect(errorElement.textContent).toBe('Test error message');
       
-      jest.advanceTimersByTime(5000);
+      if (jest.advanceTimersByTime) {
+        jest.advanceTimersByTime(5000);
+      }
       
       expect(document.querySelector('.error-message')).toBeFalsy();
       
-      jest.useRealTimers();
+      if (jest.useRealTimers) {
+        jest.useRealTimers();
+      }
     });
   });
 

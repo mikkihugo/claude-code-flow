@@ -220,8 +220,8 @@ export class CircuitBreaker {
   /**
    * Get current state
    */
-  getState(): CircuitState {
-    return this.state;
+  getState(): { state: CircuitState } {
+    return { state: this.state };
   }
 
   /**
