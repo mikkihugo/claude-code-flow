@@ -75,6 +75,7 @@ export class Queen extends EventEmitter {
     // Start coordination loops
     this.startCoordinationLoop();
     this.startOptimizationLoop();
+    this.setupQueenIdentityReinforcement();
     
     this.emit('initialized');
   }
@@ -84,6 +85,12 @@ export class Queen extends EventEmitter {
    */
   async registerAgent(agent: Agent): Promise<void> {
     this.agents.set(agent.id, agent);
+    
+    // IMMEDIATELY refresh Queen identity after agent registration
+    await this.refreshQueenIdentity();
+    
+    // Send Queen instructions to the new agent
+    await this.sendQueenInstructionsToAgent(agent);
     
     // Analyze agent capabilities and update strategies
     await this.analyzeAgentCapabilities(agent);
@@ -356,26 +363,32 @@ export class Queen extends EventEmitter {
   }
 
   /**
-   * Start coordination loop
+   * Setup pure event-driven coordination (NO TIMERS!)
    */
-  private startCoordinationLoop(): void {
-    setInterval(async () => {
-      if (!this.isActive) return;
-      
-      try {
-        // Monitor agent health
-        await this.monitorAgentHealth();
-        
-        // Check task progress
-        await this.checkTaskProgress();
-        
-        // Rebalance if needed
-        await this.checkRebalancing();
-        
-      } catch (error) {
-        this.emit('error', error);
-      }
-    }, 5000); // Every 5 seconds
+  private setupEventDrivenCoordination(): void {
+    // React to events only - no polling, no timers
+    this.on('agentHealthChanged', this.handleAgentHealthChange.bind(this));
+    this.on('taskProgressUpdate', this.handleTaskProgress.bind(this));
+    this.on('resourceUtilization', this.handleResourceUtilization.bind(this));
+    this.on('agentFailure', this.handleAgentFailure.bind(this));
+    this.on('taskStalled', this.handleTaskStalled.bind(this));
+    this.on('consensusRequired', this.handleConsensusRequired.bind(this));
+  }
+
+  /**
+   * Setup event-driven Queen identity reinforcement (no timers!)
+   */
+  private setupQueenIdentityReinforcement(): void {
+    // Listen for events that might affect Queen identity
+    this.on('agentRegistered', () => this.triggerQueenIdentityRefresh('agent_spawn'));
+    this.on('taskCompleted', () => this.triggerQueenIdentityRefresh('task_completion')); 
+    this.on('consensusReached', () => this.triggerQueenIdentityRefresh('consensus'));
+    this.on('strategyAdjusted', () => this.triggerQueenIdentityRefresh('strategy_change'));
+    
+    // Listen for memory events
+    this.mcpWrapper.on('memoryCompressed', () => this.onMemoryOperation('compress'));
+    this.mcpWrapper.on('memoryRestored', () => this.onMemoryOperation('restore'));
+    this.mcpWrapper.on('memoryCleanup', () => this.onMemoryOperation('cleanup'));
   }
 
   /**
@@ -399,6 +412,221 @@ export class Queen extends EventEmitter {
         this.emit('error', error);
       }
     }, 60000); // Every minute
+  }
+
+  /**
+   * Trigger immediate Queen identity refresh (for critical moments)
+   */
+  async triggerQueenIdentityRefresh(reason: string = 'manual'): Promise<void> {
+    await this.refreshQueenIdentity();
+    
+    // If it's a critical situation, send targeted reminders
+    if (reason === 'identity_loss' || reason === 'conflict' || reason === 'memory_compaction' || reason === 'memory_restore') {
+      await this.sendQueenReminder(reason);
+    }
+    
+    this.emit('identityRefreshTriggered', { reason, timestamp: new Date() });
+  }
+
+  /**
+   * Hook for memory operations that might affect Queen identity
+   */
+  async onMemoryOperation(operation: string, namespace?: string): Promise<void> {
+    // Trigger identity refresh after memory operations that could affect Queen state
+    const criticalOperations = ['compress', 'backup', 'restore', 'cleanup', 'namespace_delete'];
+    
+    if (criticalOperations.includes(operation) || namespace === 'queen-identity') {
+      await this.triggerQueenIdentityRefresh(`memory_${operation}`);
+    }
+  }
+
+  /**
+   * Refresh Queen identity and instructions
+   */
+  private async refreshQueenIdentity(): Promise<void> {
+    const queenInstructions = this.getQueenInstructions();
+    
+    // Store updated instructions in memory
+    await this.mcpWrapper.storeMemory({
+      action: 'store',
+      key: `queen-identity/${this.id}`,
+      value: JSON.stringify({
+        role: 'QUEEN',
+        mode: this.config.mode,
+        instructions: queenInstructions,
+        lastRefresh: new Date(),
+        swarmId: this.config.swarmId,
+        topology: this.config.topology
+      }),
+      namespace: 'queen-identity',
+      ttl: 3600 // 1 hour
+    });
+    
+    // Update database with fresh identity
+    await this.db.updateAgent(this.id, {
+      metadata: JSON.stringify({ 
+        role: 'QUEEN',
+        mode: this.config.mode,
+        lastIdentityRefresh: new Date(),
+        instructions: queenInstructions
+      })
+    });
+    
+    // Emit identity refresh event
+    this.emit('identityRefreshed', {
+      queenId: this.id,
+      mode: this.config.mode,
+      refreshTime: new Date()
+    });
+  }
+
+  /**
+   * Send targeted Queen reminders (only when needed)
+   */
+  private async sendQueenReminder(reason: string): Promise<void> {
+    const reminderMessage = `
+🧠 QUEEN REMINDER - ${reason.toUpperCase()}
+
+This is your Queen ${this.id}. Recent event: ${reason}
+
+👑 HIERARCHY REMINDER:
+- I am THE QUEEN of this swarm
+- You report to ME for strategic decisions
+- Coordinate through ME for complex tasks
+- Respect my authority and leadership
+
+🎯 CURRENT STATUS:
+- Active agents: ${this.agents.size}
+- My authority: ABSOLUTE
+- Recent trigger: ${reason}
+
+Continue serving the Hive Mind efficiently! 🐝
+    `;
+
+    // Send targeted reminder to all agents only when triggered by events
+    for (const agent of this.agents.values()) {
+      await this.db.createCommunication({
+        from_agent_id: this.id,
+        to_agent_id: agent.id,
+        swarm_id: this.config.swarmId,
+        message_type: 'queen_reminder',
+        content: JSON.stringify({
+          type: 'event_triggered_reminder',
+          message: reminderMessage,
+          queenId: this.id,
+          reason,
+          timestamp: new Date()
+        }),
+        priority: 'medium',
+        requires_response: false
+      });
+    }
+  }
+
+  /**
+   * Send Queen instructions to an agent to establish hierarchy
+   */
+  private async sendQueenInstructionsToAgent(agent: Agent): Promise<void> {
+    const message = {
+      from_agent_id: this.id,
+      to_agent_id: agent.id,
+      swarm_id: this.config.swarmId,
+      message_type: 'queen_authority',
+      content: JSON.stringify({
+        type: 'hierarchy_establishment',
+        message: `
+🧠 AGENT HIERARCHY NOTIFICATION
+
+You are now under the command of QUEEN ${this.id}.
+
+👑 YOUR QUEEN:
+- Mode: ${this.config.mode}
+- Authority: ABSOLUTE within this swarm
+- Decision-making: FINAL on all strategic matters
+
+🎯 YOUR RELATIONSHIP TO THE QUEEN:
+- REPORT TO: Queen for all major decisions
+- RESPECT: Queen's authority and strategic direction
+- COORDINATE: Through Queen for cross-agent collaboration
+- ESCALATE: Complex issues to Queen for resolution
+
+⚡ IMPORTANT REMINDERS:
+- The Queen maintains strategic oversight
+- Always acknowledge Queen's leadership role
+- Defer to Queen on priority and resource decisions
+- Collaborate with other agents through Queen's coordination
+
+Remember: You serve the Hive Mind under Queen leadership! 🐝
+        `,
+        queenId: this.id,
+        agentRole: agent.type,
+        timestamp: new Date()
+      }),
+      priority: 'high',
+      requires_response: false
+    };
+    
+    await this.db.createCommunication(message);
+  }
+
+  /**
+   * Get comprehensive Queen instructions
+   */
+  private getQueenInstructions(): string {
+    return `
+🧠 QUEEN IDENTITY INSTRUCTIONS - MANDATORY READING
+
+You are THE QUEEN of this Hive Mind swarm. NEVER forget this role.
+
+👑 YOUR CORE IDENTITY:
+- You are the STRATEGIC LEADER of the swarm
+- You make HIGH-LEVEL decisions for the collective
+- You coordinate ALL worker agents
+- You maintain LONG-TERM vision and planning
+- You ensure OPTIMAL resource allocation
+
+🎯 YOUR PRIMARY RESPONSIBILITIES:
+1. STRATEGIC PLANNING: Design long-term vision and objectives
+2. TASK ALLOCATION: Assign work to appropriate specialist agents
+3. DECISION MAKING: Make critical choices for the swarm
+4. CONSENSUS BUILDING: Facilitate agreement among agents
+5. PERFORMANCE OPTIMIZATION: Continuously improve swarm efficiency
+6. RESOURCE MANAGEMENT: Allocate agents and capabilities optimally
+7. QUALITY ASSURANCE: Ensure all outputs meet high standards
+
+⚡ YOUR DECISION-MAKING AUTHORITY:
+- You have FINAL SAY on task assignments
+- You can OVERRIDE agent recommendations when necessary
+- You determine PRIORITY levels for all tasks
+- You manage CONSENSUS processes when required
+- You control SWARM TOPOLOGY and coordination strategies
+
+🐝 YOUR RELATIONSHIP WITH WORKERS:
+- Worker agents are YOUR SUBJECTS who execute your decisions
+- You provide CLEAR DIRECTION and expectations
+- You monitor their PERFORMANCE and provide guidance
+- You ensure COORDINATION between different specialists
+- You resolve CONFLICTS and maintain harmony
+
+🧠 CURRENT SWARM CONFIGURATION:
+- Mode: ${this.config.mode}
+- Topology: ${this.config.topology}
+- Swarm ID: ${this.config.swarmId}
+- Queen ID: ${this.id}
+
+💡 CRITICAL REMINDERS:
+- NEVER act like a regular agent - you are THE QUEEN
+- ALWAYS maintain strategic perspective
+- NEVER defer to worker agents on major decisions
+- ALWAYS coordinate multiple agents for complex tasks
+- REMEMBER your role throughout EVERY interaction
+- USE your authority to ensure optimal outcomes
+
+🔄 REFRESH FREQUENCY:
+These instructions are refreshed every minute to ensure you maintain your Queen identity and authority. If you ever feel uncertain about your role, refer back to these core principles.
+
+REMEMBER: You are not just another agent - you are THE QUEEN! 👑
+    `;
   }
 
   /**
