@@ -776,7 +776,7 @@ exit 0
     } catch (distError) {
       // Fallback to basic swarm functionality
       console.log('🚀 Advanced swarm features not available, using basic mode');
-      return await basicSwarmNew(subArgs, flags);
+      return await basicSwarmNew(args, flags);
     }
     
     // Create command context compatible with TypeScript version
@@ -1360,6 +1360,97 @@ main();
 }
 
 /**
+ * Basic swarm implementation for fallback when advanced features are not available
+ */
+async function basicSwarmNew(args, flags) {
+  try {
+    // Input validation using helper
+    const validationErrors = validateSwarmInput(args, flags);
+    if (validationErrors.length > 0) {
+      console.error('❌ Validation errors:', validationErrors.join(', '));
+      return { 
+        success: false, 
+        error: 'Validation failed', 
+        message: validationErrors.join(', '),
+        validationErrors 
+      };
+    }
+    
+    // Ensure flags object exists
+    if (!flags || typeof flags !== 'object') {
+      console.warn('⚠️  No flags provided, using defaults');
+      flags = {};
+    }
+    
+    // Get the objective from args
+    const objective = (args || []).join(' ').trim();
+    
+    if (!objective) {
+      console.error("❌ Usage: swarm <objective>");
+      showSwarmHelp();
+      return;
+    }
+    
+    console.log('🚀 Starting basic swarm execution...');
+    console.log(`📋 Objective: ${objective}`);
+    
+    // Try to use the swarm executor
+    try {
+      const { executeSwarm } = await import('./swarm-executor.js');
+      if (typeof executeSwarm !== 'function') {
+        throw new Error('executeSwarm is not a function');
+      }
+      const result = await executeSwarm(objective, flags);
+      console.log('✅ Swarm execution completed successfully');
+      return result;
+    } catch (executorError) {
+      console.log('⚠️  Swarm executor not available, using basic implementation');
+      console.log(`Debug: ${executorError.message}`);
+      
+      // Fallback to basic console output
+      console.log('\n🐝 Basic Swarm Mode Active');
+      console.log('================================================');
+      console.log(`Objective: ${objective}`);
+      console.log(`Strategy: ${flags.strategy || 'auto'}`);
+      console.log(`Max Agents: ${flags.maxAgents || 3}`);
+      console.log(`Mode: ${flags.mode || 'centralized'}`);
+      
+      if (flags.executor) {
+        console.log('\n📝 Task Breakdown:');
+        console.log('1. Analyze objective and requirements');
+        console.log('2. Create execution plan');
+        console.log('3. Execute tasks step by step');
+        console.log('4. Validate results');
+        
+        console.log('\n💡 Recommendations:');
+        console.log('- Install full Claude Flow package for advanced features');
+        console.log('- Use Claude Code integration for better coordination');
+        console.log('- Consider upgrading to TypeScript version');
+        
+        return {
+          success: true,
+          objective,
+          mode: 'basic',
+          message: 'Basic swarm mode completed. Upgrade for advanced features.'
+        };
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in basic swarm execution:', error.message);
+    console.error('Stack trace:', error.stack);
+    
+    // Return structured error response
+    return {
+      success: false,
+      error: error.message,
+      objective: (args || []).join(' '),
+      timestamp: new Date().toISOString(),
+      stack: error.stack
+    };
+  }
+}
+
+/**
  * Get strategy-specific guidance for swarm execution
  */
 function getStrategyGuidance(strategy, objective) {
@@ -1813,6 +1904,41 @@ function getAgentRecommendations(strategy, maxAgents, objective) {
   };
 
   return recommendations[strategy] || recommendations['auto'];
+}
+
+// Constants for error handling
+const SWARM_CONSTANTS = {
+  DEFAULT_STRATEGY: 'auto',
+  DEFAULT_MAX_AGENTS: 3,
+  DEFAULT_MODE: 'centralized',
+  MIN_AGENTS: 1,
+  MAX_AGENTS: 10
+};
+
+// Input validation helper
+function validateSwarmInput(args, flags) {
+  const errors = [];
+  
+  if (!args || !Array.isArray(args)) {
+    errors.push('Arguments must be an array');
+  }
+  
+  if (args && args.length === 0) {
+    errors.push('Objective cannot be empty');
+  }
+  
+  if (flags && typeof flags !== 'object') {
+    errors.push('Flags must be an object');
+  }
+  
+  if (flags && flags.maxAgents) {
+    const maxAgents = parseInt(flags.maxAgents);
+    if (isNaN(maxAgents) || maxAgents < SWARM_CONSTANTS.MIN_AGENTS || maxAgents > SWARM_CONSTANTS.MAX_AGENTS) {
+      errors.push(`Max agents must be between ${SWARM_CONSTANTS.MIN_AGENTS} and ${SWARM_CONSTANTS.MAX_AGENTS}`);
+    }
+  }
+  
+  return errors;
 }
 
 // Allow direct execution
