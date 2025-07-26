@@ -159,8 +159,9 @@ describe('Utility Functions', () => {
       expect(jsFiles).toEqual(['app.js']);
 
       const smallFiles = fileFilter.filterBySize(testFiles, 2000);
-      expect(smallFiles).toHaveLength(3);
+      expect(smallFiles).toHaveLength(2); // app.js (1024) and readme.md (512)
       expect(smallFiles.some(f => f.name === 'image.png')).toBe(false);
+      expect(smallFiles.some(f => f.name === 'style.css')).toBe(false); // 2048 > 2000
     });
   });
 

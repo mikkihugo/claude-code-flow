@@ -219,7 +219,7 @@ describe('Integration and End-to-End Test Coverage', () => {
       
       expect(validateData({ name: 'John', age: 25 })).toEqual([]);
       expect(validateData({ name: 'Jane' })).toEqual([]);
-      expect(validateData({})).toContain('Name is required');
+      expect(validateData({})).toContain('Name is required and must be a string');
       expect(validateData({ name: 'Bob', age: -5 })).toContain('Age must be a positive number');
     });
   });
