@@ -98,9 +98,9 @@ class SqliteMemoryStore {
         value TEXT NOT NULL,
         namespace TEXT NOT NULL DEFAULT 'default',
         metadata TEXT,
-        created_at INTEGER DEFAULT (strftime('%s', 'now')),
-        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
-        accessed_at INTEGER DEFAULT (strftime('%s', 'now')),
+        created_at INTEGER DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+        updated_at INTEGER DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
+        accessed_at INTEGER DEFAULT (CAST(strftime('%s', 'now') AS INTEGER)),
         access_count INTEGER DEFAULT 0,
         ttl INTEGER,
         expires_at INTEGER,
@@ -117,11 +117,11 @@ class SqliteMemoryStore {
       CREATE INDEX IF NOT EXISTS idx_memory_namespace_updated ON memory_entries(namespace, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_memory_namespace_access_count ON memory_entries(namespace, access_count DESC);
       CREATE INDEX IF NOT EXISTS idx_memory_active_entries ON memory_entries(namespace, expires_at) 
-        WHERE expires_at IS NULL OR expires_at > strftime('%s', 'now');
+        WHERE expires_at IS NULL OR expires_at > CAST(strftime('%s', 'now') AS INTEGER);
       
       -- Search optimization indexes
-      CREATE INDEX IF NOT EXISTS idx_memory_key_search ON memory_entries(key) WHERE key LIKE '%';
-      CREATE INDEX IF NOT EXISTS idx_memory_value_search ON memory_entries(value) WHERE value LIKE '%';
+      CREATE INDEX IF NOT EXISTS idx_memory_key_search ON memory_entries(key);
+      CREATE INDEX IF NOT EXISTS idx_memory_value_search ON memory_entries(value);
       
       -- Analytics indexes
       CREATE INDEX IF NOT EXISTS idx_memory_created_at ON memory_entries(created_at);
@@ -141,7 +141,7 @@ class SqliteMemoryStore {
         metadata = excluded.metadata,
         ttl = excluded.ttl,
         expires_at = excluded.expires_at,
-        updated_at = strftime('%s', 'now'),
+        updated_at = CAST(strftime('%s', 'now') AS INTEGER),
         access_count = memory_entries.access_count + 1
     `),
     );

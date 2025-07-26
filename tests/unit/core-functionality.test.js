@@ -395,6 +395,8 @@ describe('Core Functionality Tests', () => {
           for (const [key, rules] of Object.entries(schema)) {
             const value = config[key];
             
+            // console.log(`Validating ${key}:`, { value, rules });
+            
             if (rules.required && value === undefined) {
               errors.push(`${key} is required`);
               continue;
@@ -402,6 +404,27 @@ describe('Core Functionality Tests', () => {
             
             if (value === undefined) continue;
             
+            // Check if this is a nested object schema
+            // A nested object schema has properties but no direct validation rules
+            // We need to check if all properties are themselves validation rule objects
+            const isNestedSchema = typeof rules === 'object' && rules !== null && 
+              Object.keys(rules).length > 0 && 
+              Object.values(rules).every(rule => 
+                typeof rule === 'object' && rule !== null && 
+                (rule.hasOwnProperty('type') || rule.hasOwnProperty('enum') || rule.hasOwnProperty('min') || rule.hasOwnProperty('max') || rule.hasOwnProperty('required'))
+              );
+            
+            if (isNestedSchema) {
+              if (typeof value === 'object' && value !== null) {
+                const nestedErrors = this.validate(value, rules);
+                errors.push(...nestedErrors.map(err => `${key}.${err}`));
+              } else {
+                errors.push(`${key} must be an object`);
+              }
+              continue;
+            }
+            
+            // Direct validation rules
             if (rules.type && typeof value !== rules.type) {
               errors.push(`${key} must be of type ${rules.type}`);
             }
@@ -417,11 +440,6 @@ describe('Core Functionality Tests', () => {
             if (rules.enum && !rules.enum.includes(value)) {
               errors.push(`${key} must be one of: ${rules.enum.join(', ')}`);
             }
-            
-            if (typeof rules === 'object' && typeof value === 'object') {
-              const nestedErrors = this.validate(value, rules);
-              errors.push(...nestedErrors.map(err => `${key}.${err}`));
-            }
           }
           
           return errors;
@@ -433,7 +451,10 @@ describe('Core Functionality Tests', () => {
         server: { port: 3000, host: 'localhost' },
         database: { type: 'sqlite' }
       };
-      expect(schemaValidator.validate(validConfig)).toEqual([]);
+      
+      // Call validate with proper nested validation
+      const result = schemaValidator.validate(validConfig);
+      expect(result).toEqual([]);
 
       // Invalid config
       const invalidConfig = {
